@@ -1,7 +1,12 @@
+# Author Hervé BERAUD
 from fabric.api import *
 import md5
+import os
 
+# VirtualBox local bridge between host and guest
+# Replace by your IP
 env.hosts = ['192.168.56.101']
+CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 
 ##########################################
 # Create new server operation
@@ -13,6 +18,9 @@ def initialize():
     functional server
     """
     install_app()
+    setup_ssh()
+    user_admin()
+    setup_firewall()
 
 def install_app():
     """
@@ -20,10 +28,12 @@ def install_app():
     works for python-django website with postgresql databse
     """
     apps = [
+        'vim-nox',
         'python-pip',
         'python-virtualenv',
         'postgresql-8.4',
         'apache2',
+        'makejail'
     ]
 
     apt = ''
@@ -33,10 +43,41 @@ def install_app():
     run('aptitude upgrade')
     run('aptitude install {0}' . format(apt))
 
-def set_firewall():
+def user_admin():
+    """
+    Create administrator other than root
+    """
+    username = prompt('Username for admin : ')
+    add_new_user()
+    run('echo AllowUsers {0} >> /etc/ssh/sshd_config' . format(username))
+    run('/etc/init.d/ssh restart')
+
+def setup_firewall():
     """
     Initialize and configure iptable firewall.
     """
+    path = '{0}firewall.sh' . format(CONFIG_PATH)
+    put(path, '~', mode=0700)
+    run('echo "/root/firewall.sh" >> /etc/rc.local')
+    run('sh ~/firewall.sh')
+
+def setup_ssh():
+    """
+    Initialize and configure SSH.
+    root login is deactivated
+    restart after create new user account admin
+    """
+    path = '{0}sshd_config' . format(CONFIG_PATH)
+    put(path, '/etc/ssh')
+
+def jail_apache():
+    """
+    Secure apache by chroot
+    http://www.debian.org/doc/manuals/securing-debian-howto/ap-chroot-apache-env.fr.html
+
+    /!\ Not implemented for moment
+    """
+    pass
 
 ##########################################
 # Common operations
@@ -49,9 +90,16 @@ def add_new_site():
     Create a new postgre user in relation with debian user.
     """
     username = prompt('Username :')
-    run('adduser {0}' . format(username))
+    add_new_user(username)
     add_postgre_user(username)
     add_httpd_vhost(username)
+
+def add_new_user(username=None):
+    """
+    """
+    if not username:
+        username = prompt('Username :')
+    run('adduser {0}' . format(username))
 
 def add_postgre_user(username):
     """
