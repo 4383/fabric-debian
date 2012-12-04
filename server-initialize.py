@@ -4,8 +4,8 @@ import md5
 import os
 import io
 
-# VirtualBox local bridge between host and guest
-# Replace by your IP
+# VirtualBox local bridge between host and guest only for testing
+# Replace by your server IP
 env.hosts = ['192.168.56.102']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
@@ -35,9 +35,11 @@ def install_app():
         'python-virtualenv',
         'python-setuptools',
         'python-psycopg2',
+        'python-imaging'
         'postgresql-8.4',
         'apache2',
         'libapache2-mod-wsgi'
+        'git',
         'makejail',
     ]
 
@@ -96,6 +98,7 @@ def add_new_site():
     """
     username = prompt('Username :')
     add_new_user(username)
+    add_git_repo(username)
     add_postgre_user(username)
     add_httpd_vhost(username)
 
@@ -104,7 +107,7 @@ def add_new_user(username=None):
     """
     if not username:
         username = prompt('Username :')
-    run('adduser {0}' . format(username))
+    sudo('adduser {0}' . format(username), user='root')
 
 def add_postgre_user(username):
     """
@@ -124,18 +127,52 @@ def add_postgre_user(username):
     for command in actions:
         sudo(command, user='postgres')
 
-def add_httpd_vhost(username='vrp-online'):
+def add_git_repo(username):
+    """
+    Add a new git repository for current web site source code.
+    Upload archive format at tar.gz to server
+    Create and initialize git repository, add source file to this
+    """
+    # Upload source into admin account
+    source = prompt('Path to your source.tar.gz')
+    put(source, 'source.tar.gz')
+
+    run('tar xfvz source.tar.gz')
+    run('chmod ugo+r source')
+    home = '/home/{0}' . format(username)
+    # Create and init repository
+    with cd(home):
+        with settings(sudo_user=username):
+            sudo('mkdir -p git')
+            sudo('chmod ugo+w git')
+            with cd('{0}/git' . format(home)):
+                sudo('git init')
+                run('cp -R source /home/{0}/git' . format(username))
+                sudo('chmod o-w git')
+                sudo('git add')
+                sudo('git commit -m "First import"')
+                sudo('git push -u origin master')
+
+def add_httpd_vhost(username):
     """
     Add a new virtualhost to httpd with using template apache
     """
     # Create the new config file for writing
-    config = io.open('{0}{1}.conf' . format(TMP_PATH, username), 'w')
+    config_file = '{0}{1}.conf' . format(TMP_PATH, username)
+    config = io.open(config_file, 'w')
 
     # Read the lines from the template, substitute the values, and write to the new config file
-    for line in io.open('{0}apache' . format(CONFIG_PATH), 'r'):
-        line = line.replace('$path_site', '/home/{0}/www/' . format(username))
+    for line in io.open('{0}apache.conf' . format(CONFIG_PATH), 'r'):
+        line = line.replace('$path_site', '/home/{0}/www' . format(username))
         line = line.replace('$site_domain', '{0}.com' . format(username))
         config.write(line)
 
     # Close the files
     config.close()
+    put(config_file, '')
+
+    # Install conf and restart apache
+    with settings(sudo_user='root'):
+        sudo('mv {0} /etc/httpd/conf.d')
+        sudo('/etc/init.d/httpd restart')
+

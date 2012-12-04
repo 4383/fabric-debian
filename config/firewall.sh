@@ -56,7 +56,6 @@ echo - Allow ping : [OK]
 
 # Allow SSH
 iptables -t filter -A INPUT -p tcp --dport 6060 -m recent --rcheck --seconds 60 --hitcount 2 --name SSH -j LOG --log-prefix "SSH REJECT"
-
- iptables -t filter -A INPUT -p tcp --dport 6060 -m recent --update --seconds 60 --hitcount 2 --name SSH -j DROP
-
+iptables -t filter -A INPUT -p tcp --dport 6060 -m recent --update --seconds 60 --hitcount 2 --name SSH -j DROP 
 iptables -t filter -A INPUT -p tcp --dport 6060 -m state --state NEW -m recent --set --name SSH -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 6060 -j ACCEPT
