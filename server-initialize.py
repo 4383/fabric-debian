@@ -2,11 +2,13 @@
 from fabric.api import *
 import md5
 import os
+import io
 
 # VirtualBox local bridge between host and guest
 # Replace by your IP
 env.hosts = ['192.168.56.102']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
+TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
 
 ##########################################
 # Create new server operation
@@ -31,9 +33,12 @@ def install_app():
         'vim-nox',
         'python-pip',
         'python-virtualenv',
+        'python-setuptools',
+        'python-psycopg2',
         'postgresql-8.4',
         'apache2',
-        'makejail'
+        'libapache2-mod-wsgi'
+        'makejail',
     ]
 
     apt = ''
@@ -119,7 +124,18 @@ def add_postgre_user(username):
     for command in actions:
         sudo(command, user='postgres')
 
-def add_httpd_vhost(username):
+def add_httpd_vhost(username='vrp-online'):
     """
-    Add a new virtualhost to httpd
+    Add a new virtualhost to httpd with using template apache
     """
+    # Create the new config file for writing
+    config = io.open('{0}{1}.conf' . format(TMP_PATH, username), 'w')
+
+    # Read the lines from the template, substitute the values, and write to the new config file
+    for line in io.open('{0}apache' . format(CONFIG_PATH), 'r'):
+        line = line.replace('$path_site', '/home/{0}/www/' . format(username))
+        line = line.replace('$site_domain', '{0}.com' . format(username))
+        config.write(line)
+
+    # Close the files
+    config.close()
