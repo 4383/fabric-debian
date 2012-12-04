@@ -1,11 +1,11 @@
-# Author Hervé BERAUD
+# Author Herve BERAUD
 from fabric.api import *
 import md5
 import os
 
 # VirtualBox local bridge between host and guest
 # Replace by your IP
-env.hosts = ['192.168.56.101']
+env.hosts = ['192.168.56.102']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 
 ##########################################
@@ -48,7 +48,7 @@ def user_admin():
     Create administrator other than root
     """
     username = prompt('Username for admin : ')
-    add_new_user()
+    add_new_user(username)
     run('echo AllowUsers {0} >> /etc/ssh/sshd_config' . format(username))
     run('/etc/init.d/ssh restart')
 
