@@ -1,4 +1,7 @@
-# Author Herve BERAUD
+# -*- coding: utf-8 -*-
+"""
+author : Hervé BERAUD
+"""
 from fabric.api import *
 import md5
 import os
@@ -13,7 +16,7 @@ TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
 ##########################################
 # Create new server operation
 ##########################################
-def initialize():
+def deploy_server():
     """
     Full initialize of debian server deployement
     Only make basic action of the root user for make
@@ -21,7 +24,6 @@ def initialize():
     """
     install_app()
     setup_ssh()
-    user_admin()
     setup_firewall()
 
 def install_app():
@@ -39,7 +41,7 @@ def install_app():
         'postgresql-8.4',
         'apache2',
         'libapache2-mod-wsgi'
-        'git',
+        'git-core',
         'makejail',
     ]
 
@@ -50,46 +52,10 @@ def install_app():
     run('aptitude upgrade')
     run('aptitude install {0}' . format(apt))
 
-def user_admin():
-    """
-    Create administrator other than root
-    """
-    username = prompt('Username for admin : ')
-    add_new_user(username)
-    run('echo AllowUsers {0} >> /etc/ssh/sshd_config' . format(username))
-    run('/etc/init.d/ssh restart')
-
-def setup_firewall():
-    """
-    Initialize and configure iptable firewall.
-    """
-    path = '{0}firewall.sh' . format(CONFIG_PATH)
-    put(path, '~', mode=0700)
-    run('echo "/root/firewall.sh" >> /etc/rc.local')
-    run('sh ~/firewall.sh')
-
-def setup_ssh():
-    """
-    Initialize and configure SSH.
-    root login is deactivated
-    restart after create new user account admin
-    """
-    path = '{0}sshd_config' . format(CONFIG_PATH)
-    put(path, '/etc/ssh')
-
-def jail_apache():
-    """
-    Secure apache by chroot
-    http://www.debian.org/doc/manuals/securing-debian-howto/ap-chroot-apache-env.fr.html
-
-    /!\ Not implemented for moment
-    """
-    pass
-
 ##########################################
-# Common operations
+# Common operations for website
 ##########################################
-def add_new_site():
+def deploy_website():
     """
     Add a new website on the specified server.
     The website live on new account user on this server.
@@ -98,16 +64,32 @@ def add_new_site():
     """
     username = prompt('Username :')
     add_new_user(username)
-    add_git_repo(username)
+    ssh_rsa_authentification_for_user(username)
+    init_git(username)
     add_postgre_user(username)
     add_httpd_vhost(username)
 
 def add_new_user(username=None):
     """
+    Add new system user account
     """
     if not username:
         username = prompt('Username :')
-    sudo('adduser {0}' . format(username), user='root')
+    run('adduser {0}' . format(username))
+
+def ssh_rsa_authentification_for_user(username):
+    """
+    Configure ssh rsa authentification
+    """
+    if not os.path.isfile('~/.ssh/id_rsa.pub'):
+        local('ssh-keygen -t rsa')
+    sudo('mkdir ~/.ssh', user=username)
+    put('~/.ssh/id_rsa.pub', '/home/{0}/.ssh' . format(username))
+    run('chown -R {0}:{0} /home/{0}/.ssh' . format(username))
+    sudo(
+        'cat /home/{0}/.ssh/id_rsa.pub >> /home/{0}/.ssh/authorized_keys' . format(username),
+        user=username
+    )
 
 def add_postgre_user(username):
     """
@@ -127,7 +109,7 @@ def add_postgre_user(username):
     for command in actions:
         sudo(command, user='postgres')
 
-def add_git_repo(username):
+def init_git(username):
     """
     Add a new git repository for current web site source code.
     Upload archive format at tar.gz to server
@@ -138,7 +120,7 @@ def add_git_repo(username):
     put(source, 'source.tar.gz')
 
     run('tar xfvz source.tar.gz')
-    run('chmod ugo+r source')
+    run('chmod ugo+rw source')
     home = '/home/{0}' . format(username)
     # Create and init repository
     with cd(home):
@@ -148,6 +130,7 @@ def add_git_repo(username):
             with cd('{0}/git' . format(home)):
                 sudo('git init')
                 run('cp -R source /home/{0}/git' . format(username))
+                run('chown -R {0}:{0} .' . format(username))
                 sudo('chmod o-w git')
                 sudo('git add')
                 sudo('git commit -m "First import"')
@@ -176,3 +159,27 @@ def add_httpd_vhost(username):
         sudo('mv {0} /etc/httpd/conf.d')
         sudo('/etc/init.d/httpd restart')
 
+##########################################
+# Common operations for secure
+##########################################
+def setup_port_knocking():
+    """
+    """
+
+def setup_firewall():
+    """
+    Initialize and configure iptable firewall.
+    """
+    path = '{0}firewall.sh' . format(CONFIG_PATH)
+    put(path, '~', mode=0700)
+    run('echo "/root/firewall.sh" >> /etc/rc.local')
+    run('sh ~/firewall.sh')
+
+def setup_ssh():
+    """
+    Initialize and configure SSH.
+    root login is deactivated
+    restart after create new user account admin
+    """
+    path = '{0}sshd_config' . format(CONFIG_PATH)
+    put(path, '/etc/ssh')
