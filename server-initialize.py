@@ -9,9 +9,10 @@ import io
 
 # VirtualBox local bridge between host and guest only for testing
 # Replace by your server IP
-env.hosts = ['192.168.56.102']
+env.hosts = ['192.168.56.101']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
+ENV = 'DEV'
 
 ##########################################
 # Create new server operation
@@ -24,7 +25,21 @@ def deploy_server():
     """
     install_app()
     setup_ssh()
+    setup_port_knocking()
     setup_firewall()
+
+def deploy_website():
+    """
+    Add a new website on the specified server.
+    The website live on new account user on this server.
+    The path to source is : /home/<username>/source
+    Create a new postgre user in relation with debian user.
+    """
+    username = prompt('Username :')
+    add_new_user(username)
+    init_git(username)
+    add_postgre_user(username)
+    add_httpd_vhost(username)
 
 def install_app():
     """
@@ -37,12 +52,13 @@ def install_app():
         'python-virtualenv',
         'python-setuptools',
         'python-psycopg2',
-        'python-imaging'
+        'python-imaging',
         'postgresql-8.4',
         'apache2',
-        'libapache2-mod-wsgi'
+        'libapache2-mod-wsgi',
         'git-core',
         'makejail',
+        'knockd',
     ]
 
     apt = ''
@@ -55,19 +71,6 @@ def install_app():
 ##########################################
 # Common operations for website
 ##########################################
-def deploy_website():
-    """
-    Add a new website on the specified server.
-    The website live on new account user on this server.
-    The path to source is : /home/<username>/source
-    Create a new postgre user in relation with debian user.
-    """
-    username = prompt('Username :')
-    add_new_user(username)
-    ssh_rsa_authentification_for_user(username)
-    init_git(username)
-    add_postgre_user(username)
-    add_httpd_vhost(username)
 
 def add_new_user(username=None):
     """
@@ -76,6 +79,7 @@ def add_new_user(username=None):
     if not username:
         username = prompt('Username :')
     run('adduser {0}' . format(username))
+    ssh_rsa_authentification_for_user(username)
 
 def ssh_rsa_authentification_for_user(username):
     """
@@ -115,26 +119,20 @@ def init_git(username):
     Upload archive format at tar.gz to server
     Create and initialize git repository, add source file to this
     """
-    # Upload source into admin account
-    source = prompt('Path to your source.tar.gz')
-    put(source, 'source.tar.gz')
+    path_source = prompt('Local path to your source folder : ')
 
-    run('tar xfvz source.tar.gz')
-    run('chmod ugo+rw source')
     home = '/home/{0}' . format(username)
     # Create and init repository
     with cd(home):
         with settings(sudo_user=username):
             sudo('mkdir -p git')
-            sudo('chmod ugo+w git')
             with cd('{0}/git' . format(home)):
-                sudo('git init')
-                run('cp -R source /home/{0}/git' . format(username))
+                sudo('git --bare init')
                 run('chown -R {0}:{0} .' . format(username))
                 sudo('chmod o-w git')
-                sudo('git add')
-                sudo('git commit -m "First import"')
-                sudo('git push -u origin master')
+    local('git remote rm server_prod {0}' . format(path_source))
+    local('git remote add server_prod {0}@{1}:6060/git {2}' . format(username, env.hosts[0], path_source))
+    local('git push server_prod master {0}' . format(path_source))
 
 def add_httpd_vhost(username):
     """
@@ -143,6 +141,8 @@ def add_httpd_vhost(username):
     # Create the new config file for writing
     config_file = '{0}{1}.conf' . format(TMP_PATH, username)
     config = io.open(config_file, 'w')
+    if not config:
+        print('Configuration is broken. Config fill not found')
 
     # Read the lines from the template, substitute the values, and write to the new config file
     for line in io.open('{0}apache.conf' . format(CONFIG_PATH), 'r'):
@@ -152,19 +152,39 @@ def add_httpd_vhost(username):
 
     # Close the files
     config.close()
-    put(config_file, '')
+    put(config_file, '/etc/httpd/conf.d')
 
-    # Install conf and restart apache
-    with settings(sudo_user='root'):
-        sudo('mv {0} /etc/httpd/conf.d')
-        sudo('/etc/init.d/httpd restart')
+    run('/etc/init.d/httpd restart')
+    if 'DEV' ==  ENV:
+        os.remove(config_file)
 
 ##########################################
 # Common operations for secure
 ##########################################
 def setup_port_knocking():
     """
+    Initialize and configure port knocking service
     """
+    open_code_sequence = prompt('Port Knocking open code sequence (111,222,333) : ')
+    close_code_sequence = prompt('Port Knocking close code sequence (333,222,111) : ')
+    config_file = '{0}knockd.conf' . format(TMP_PATH)
+    config = io.open(config_file, 'w')
+    if not config:
+        print('Configuration is broken. Config fill not found')
+
+    # Read the lines from the template, substitute the values, and write to the new config file
+    for line in io.open('{0}knockd.conf' . format(CONFIG_PATH), 'r'):
+        line = line.replace('$open_code_sequence', open_code_sequence)
+        line = line.replace('$close_code_sequence', close_code_sequence)
+        config.write(line)
+
+    # Close the files
+    config.close()
+    put(config_file, '/etc')
+    run('knockd -d -c /etc/knockd.conf')
+
+    if 'DEV' ==  ENV:
+        os.remove(config_file)
 
 def setup_firewall():
     """
