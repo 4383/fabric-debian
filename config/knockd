@@ -1,0 +1,9 @@
+##################################################
+# knockd service starter
+# imported file, the original file is knockd.save
+##################################################
+START_KNOCKD=1
+
+# only for virtualbox testing
+# comments in production
+KNOCKD_OPTS="-i eth1"

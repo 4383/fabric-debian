@@ -24,9 +24,13 @@ def deploy_server():
     functional server
     """
     install_app()
+    run('sed /exit/d /etc/rc.local > /etc/rc.local')
     setup_ssh()
     setup_port_knocking()
     setup_firewall()
+    setup_postfix()
+    run('echo "exit 0" >> /etc/rc.local')
+    run('reboot')
 
 def deploy_website():
     """
@@ -59,6 +63,9 @@ def install_app():
         'git-core',
         'makejail',
         'knockd',
+        'sed',
+        'postfix',
+        'sendmail',
     ]
 
     apt = ''
@@ -139,7 +146,7 @@ def add_httpd_vhost(username):
     Add a new virtualhost to httpd with using template apache
     """
     # Create the new config file for writing
-    config_file = '{0}{1}.conf' . format(TMP_PATH, username)
+    config_file = '{0}{1}' . format(TMP_PATH, username)
     config = io.open(config_file, 'w')
     if not config:
         print('Configuration is broken. Config fill not found')
@@ -152,9 +159,10 @@ def add_httpd_vhost(username):
 
     # Close the files
     config.close()
-    put(config_file, '/etc/httpd/conf.d')
+    put(config_file, '/etc/apache2/site-available')
 
-    run('/etc/init.d/httpd restart')
+    run('a2ensite {0}' . format(username))
+    run('service apache2 restart')
     if 'DEV' ==  ENV:
         os.remove(config_file)
 
@@ -165,8 +173,8 @@ def setup_port_knocking():
     """
     Initialize and configure port knocking service
     """
-    open_code_sequence = prompt('Port Knocking open code sequence (111,222,333) : ')
-    close_code_sequence = prompt('Port Knocking close code sequence (333,222,111) : ')
+    open_code_sequence = prompt('Port Knocking open code sequence (example : 111,222,333) : ')
+    close_code_sequence = prompt('Port Knocking close code sequence (example : 333,222,111) : ')
     config_file = '{0}knockd.conf' . format(TMP_PATH)
     config = io.open(config_file, 'w')
     if not config:
@@ -181,7 +189,10 @@ def setup_port_knocking():
     # Close the files
     config.close()
     put(config_file, '/etc')
-    run('knockd -d -c /etc/knockd.conf')
+    run('mv /etc/default/knockd /etc/default/knockd.save')
+    put('{0}knockd' . format(CONFIG_PATH), '/etc/default')
+    run('echo "service knockd restart" >> /etc/rc.local')
+    run('service knockd restart')
 
     if 'DEV' ==  ENV:
         os.remove(config_file)
@@ -191,15 +202,18 @@ def setup_firewall():
     Initialize and configure iptable firewall.
     """
     path = '{0}firewall.sh' . format(CONFIG_PATH)
-    put(path, '~', mode=0700)
-    run('echo "/root/firewall.sh" >> /etc/rc.local')
-    run('sh ~/firewall.sh')
+    put(path, '/etc/init.d/')
+    #run('echo "/root/firewall.sh" >> /etc/rc.local')
+    run('update-rc.d firewall.sh defaults')
 
 def setup_ssh():
     """
-    Initialize and configure SSH.
-    root login is deactivated
-    restart after create new user account admin
+    Initialize and configure SSH that's listen on port 6060.
     """
     path = '{0}sshd_config' . format(CONFIG_PATH)
     put(path, '/etc/ssh')
+
+def setup_postfix():
+    """
+    Initialize configure and secure postfix
+    """

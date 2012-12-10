@@ -23,7 +23,11 @@ LogLevel INFO
 
 # Authentication:
 LoginGraceTime 120
-PermitRootLogin no
+# System is protected by port knocking
+# so ssh login is forbidden by default
+# and after knock ssh is available only
+# for the current ip
+PermitRootLogin yes
 StrictModes yes
 
 RSAAuthentication yes

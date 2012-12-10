@@ -1,55 +1,51 @@
 #!/bin/bash
-echo Setting firewall rules...
+### BEGIN INIT INFO
+# Provides: firewall
+# Required-start: $remote_fs $syslog
+# Required-stop: $remote_fs $syslog
+# Default-start: 2 3 4 5
+# Default-stop: 0 1 6
+# Short-Description: Firewall initialize script
+### END INIT INFO
 
-###### Debut Initialisation ######
+# Setting policy to reject all
+iptables -P INPUT DROP
+iptables -p FORWARD DROP
+iptables -p OUTPUT DROP
 
-# Reject all connect input
-iptables -t filter -P INPUT DROP
-iptables -t filter -P FORWARD DROP
-echo - All connect input is forbidden : [OK]
+# Flush all existing rules
+iptables -F
+iptables -X
 
-# Reject all output connect
-iptables -t filter -P OUTPUT DROP
-echo - All connect output is forbidden : [OK]
+# Accept loopback
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
 
-# Flush all rules
-iptables -t filter -F
-iptables -t filter -X
-echo - flush rules : [OK]
-
-# SMTP protect
-iptables -N LOG_REJECT_SMTP
-iptables -A LOG_REJECT_SMTP -j LOG --log-prefix ' SMTP REJECT PAQUET : '
-iptables -A LOG_REJECT_SMTP -j DROP
-echo - Protect SMTP
-
-# Ne pas casser les connexions etablies
-iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-echo - Keep connected : [OK]
-
-# Allow DNS, FTP, HTTP, NTP request
-iptables -t filter -A OUTPUT -p tcp --dport 21 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 80 -j ACCEPT
-iptables -t filter -A OUTPUT -p tcp --dport 53 -j ACCEPT
-iptables -t filter -A OUTPUT -p udp --dport 53 -j ACCEPT
-iptables -t filter -A OUTPUT -p udp --dport 123 -j ACCEPT
-
-
-iptables -t filter -A INPUT -p tcp --dport 80 -j ACCEPT
-echo - Allow HTTP
-
-# Allow SMTP request
-iptables -A OUTPUT -p tcp --dport 25  -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
-iptables -A INPUT -p tcp --sport 25  -m state --state ESTABLISHED,RELATED -j ACCEPT
-echo - Allow SMTP : [OK]
-
-# Allow loopback
-iptables -t filter -A INPUT -i lo -j ACCEPT
-iptables -t filter -A OUTPUT -o lo -j ACCEPT
-echo - Allow loopback : [OK]
+# Accept http connect
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A OUTPUT -p tcp --sport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -m limit --limit 2000/minute --limit-burst 10000 -j ACCEPT
 
 # Allow ping
-iptables -t filter -A INPUT -p icmp -j ACCEPT
-iptables -t filter -A OUTPUT -p icmp -j ACCEPT
-echo - Allow ping : [OK] 
+iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+iptables -A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
+iptables -A OUTPUT -p icmp --icmp-type echo-request -j ACCEPT
+iptables -A INPUT -p icmp --icmp-type echo-reply -j ACCEPT
+
+# Allow dns
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+iptables -A INPUT -p udp --sport 53 -j ACCEPT
+iptables -A INPUT -p tcp --sport 53 -j ACCEPT
+
+# Allow postfix sendmail
+iptables -A INPUT -p tcp --dport 25 -m state --state NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT  -p tcp --sport 25 -m state --state ESTABLISHED -j ACCEPT
+
+# Allow POP3
+iptables -A INPUT  -p tcp --dport 110 -m state --state NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT  -p tcp --sport 110 -m state --state ESTABLISHED -j ACCEPT
+
+# Allow IMAP
+iptables -t filter -A INPUT -p tcp --dport 143 -j ACCEPT
+iptables -t filter -A OUTPUT -p tcp --dport 143 -j ACCEPT
