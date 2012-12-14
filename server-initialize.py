@@ -51,6 +51,8 @@ def install_app():
     works for python-django website with postgresql databse
     """
     apps = [
+        'rkhunter',
+        'fail2ban',
         'vim-nox',
         'python-pip',
         'python-virtualenv',
@@ -216,4 +218,19 @@ def setup_ssh():
 def setup_postfix():
     """
     Initialize configure and secure postfix
+    Server domain is required because we configure
+    server for hosting multiple website. So you must
+    set domain for routing mail from system and not from specific website
     """
+    domain = prompt('Your server domain : ')
+    run('postconf -e "myorigin = {0}"' . format(domain))
+    run('postconf -e "myhostname = {0}.{1}"' . format(env.host_string, domain))
+    run('postfix reload')
+    for line in io.open('{0}smtp_secure.conf' . format(CONFIG_PATH), 'r'):
+        run('echo "{0}" >> /etc/postfix/main.cf' . format(line))
+
+def setup_rootkit_secure():
+    """
+    Initialize, configure rootkit hunting with chkrootkit and rootkithunter
+    """
+
