@@ -1,22 +1,51 @@
 # -*- coding: utf-8 -*-
 """
 author : Hervé BERAUD
+file : server-initialize.py
 """
 from fabric.api import *
 import md5
 import os
 import io
+import sys
+import re
 
 # VirtualBox local bridge between host and guest only for testing
 # Replace by your server IP
-env.hosts = ['192.168.56.101']
+#env.hosts = ['192.168.56.101']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
-ENV = 'DEV'
 
+##########################################
+# Utils
+##########################################
+def email_is_requiered(func):
+    """
+    Set email if not defined
+    """
+    def wrapper(**kwargs):
+        """
+        Handle args of decorated function
+        """
+        email = kwargs.get('email', None)
+        while email :
+            if not email:
+                email = prompt('Give an valide email')
+        return func(email)
+    return wrapper
+
+def root_is_required(func):
+    """
+    Required user root for launching function
+    """
+    if env.user != 'root':
+        print('Function require root user !')
+        sys.exit(1)
+    return func
 ##########################################
 # Create new server operation
 ##########################################
+@root_is_required
 def deploy_server():
     """
     Full initialize of debian server deployement
@@ -29,9 +58,14 @@ def deploy_server():
     setup_port_knocking()
     setup_firewall()
     setup_postfix()
+    setup_fail2ban(email='test')
+    setup_rootkit_secure(None)
+    secure_tools()
+    remove_bad_services()
     run('echo "exit 0" >> /etc/rc.local')
     run('reboot')
 
+@root_is_required
 def deploy_website():
     """
     Add a new website on the specified server.
@@ -45,29 +79,35 @@ def deploy_website():
     add_postgre_user(username)
     add_httpd_vhost(username)
 
+@root_is_required
 def install_app():
     """
     Install all apps to have functional server, that
     works for python-django website with postgresql databse
     """
     apps = [
+        # Security
         'rkhunter',
         'fail2ban',
-        'vim-nox',
+        'makejail',
+        'knockd',
+        # Python
         'python-pip',
         'python-virtualenv',
         'python-setuptools',
         'python-psycopg2',
         'python-imaging',
+        # Server
         'postgresql-8.4',
         'apache2',
         'libapache2-mod-wsgi',
         'git-core',
-        'makejail',
-        'knockd',
-        'sed',
+        # Mailing
         'postfix',
         'sendmail',
+        # Common
+        'sed',
+        'vim-nox', # Vim with python supports
     ]
 
     apt = ''
@@ -80,7 +120,7 @@ def install_app():
 ##########################################
 # Common operations for website
 ##########################################
-
+@root_is_required
 def add_new_user(username=None):
     """
     Add new system user account
@@ -165,12 +205,12 @@ def add_httpd_vhost(username):
 
     run('a2ensite {0}' . format(username))
     run('service apache2 restart')
-    if 'DEV' ==  ENV:
-        os.remove(config_file)
+    os.remove(config_file)
 
 ##########################################
 # Common operations for secure
 ##########################################
+@root_is_required
 def setup_port_knocking():
     """
     Initialize and configure port knocking service
@@ -195,10 +235,9 @@ def setup_port_knocking():
     put('{0}knockd' . format(CONFIG_PATH), '/etc/default')
     run('echo "service knockd restart" >> /etc/rc.local')
     run('service knockd restart')
+    os.remove(config_file)
 
-    if 'DEV' ==  ENV:
-        os.remove(config_file)
-
+@root_is_required
 def setup_firewall():
     """
     Initialize and configure iptable firewall.
@@ -208,6 +247,7 @@ def setup_firewall():
     #run('echo "/root/firewall.sh" >> /etc/rc.local')
     run('update-rc.d firewall.sh defaults')
 
+@root_is_required
 def setup_ssh():
     """
     Initialize and configure SSH that's listen on port 6060.
@@ -215,6 +255,7 @@ def setup_ssh():
     path = '{0}sshd_config' . format(CONFIG_PATH)
     put(path, '/etc/ssh')
 
+@root_is_required
 def setup_postfix():
     """
     Initialize configure and secure postfix
@@ -229,8 +270,61 @@ def setup_postfix():
     for line in io.open('{0}smtp_secure.conf' . format(CONFIG_PATH), 'r'):
         run('echo "{0}" >> /etc/postfix/main.cf' . format(line))
 
+@root_is_required
+@email_is_requiered
 def setup_rootkit_secure():
     """
     Initialize, configure rootkit hunting with chkrootkit and rootkithunter
     """
+    config_file = '/etc/default/rkhunter'
+    run('cp {0} {0}.old' . format(config_file))
+    run('sed s/root/{1}/ {0}.old > {0}' . format(config_file, email))
+    run('rm -rf {0}.old' . format(config_file))
 
+@root_is_required
+def secure_tools():
+    """
+    Secure and change access rule for compilating tools and
+    dangerous system tools.
+    Only root can use this.
+    """
+    run('chmod o-x /usr/bin/gcc*')
+    run('chmod o-x /usr/bin/make')
+    run('chmod o-x /usr/bin/dpkg*')
+    run('chmod o-x /usr/bin/apt-get')
+
+@root_is_required
+def remove_bad_services():
+    """
+    Remove dangerous service not used
+    """
+    run('/etc/init.d/portmap stop')
+    run('/etc/init.d/nfs-common stop')
+    run('update-rc.d -f portmap remove')
+    run('update-rc.d -f nfs-common remove')
+    run('update-rc.d -f inetd remove')
+    run('aptitude remove portmap')
+    run('aptitude remove ppp')
+
+def test():
+    setup_fail2ban()
+
+@root_is_required
+@email_is_requiered
+def setup_fail2ban(email):
+    """
+    Initialize, configure fail2ban
+    """
+    config_file = '/etc/fail2ban/jail.local'
+    run('sed /destemail/d /etc/fail2ban/jail.conf > {0}' . format(config_file))
+    rules = [
+        "destemail = {0}" . format(email),
+        "[ssh_perso]",
+        "enabled = true",
+        "port = 6060",
+        "filter = sshd",
+        "logpath = /var/log/auth.log",
+        "maxretry = 6",
+    ]
+    for rule in rules:
+        run('echo {0} >> {1}' . format(rule, config_file))
