@@ -58,8 +58,8 @@ def deploy_server():
     setup_port_knocking()
     setup_firewall()
     setup_postfix()
-    setup_fail2ban(email='test')
-    setup_rootkit_secure(None)
+    setup_fail2ban()
+    setup_rootkit_secure()
     secure_tools()
     remove_bad_services()
     run('echo "exit 0" >> /etc/rc.local')
@@ -84,6 +84,7 @@ def install_app():
     """
     Install all apps to have functional server, that
     works for python-django website with postgresql databse
+    - vim with python supports
     """
     apps = [
         # Security
@@ -306,12 +307,9 @@ def remove_bad_services():
     run('aptitude remove portmap')
     run('aptitude remove ppp')
 
-def test():
-    setup_fail2ban()
-
 @root_is_required
 @email_is_requiered
-def setup_fail2ban(email):
+def setup_fail2ban():
     """
     Initialize, configure fail2ban
     """
