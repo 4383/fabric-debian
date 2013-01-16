@@ -15,6 +15,7 @@ import re
 #env.hosts = ['192.168.56.101']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
+DST_HOME_USER_WWW = None
 
 ##########################################
 # Utils
@@ -74,10 +75,16 @@ def deploy_website():
     Create a new postgre user in relation with debian user.
     """
     username = prompt('Username :')
+    DST_HOME_USER_WWW = '/home/{0}/www' . format(username)
+    print DST_HOME_USER_WWW
+    return
     add_new_user(username)
     init_git(username)
     add_postgre_user(username)
     add_httpd_vhost(username)
+    make_venv(username)
+    upload_source(username)
+    start_gunicorn_daemonized(username)
 
 @root_is_required
 def install_app():
@@ -100,8 +107,9 @@ def install_app():
         'python-imaging',
         # Server
         'postgresql-8.4',
-        'apache2',
-        'libapache2-mod-wsgi',
+        'nginx',
+        #'apache2',
+        #'libapache2-mod-wsgi',
         'git-core',
         # Mailing
         'postfix',
@@ -130,6 +138,41 @@ def add_new_user(username=None):
         username = prompt('Username :')
     run('adduser {0}' . format(username))
     ssh_rsa_authentification_for_user(username)
+
+def make_venv(username):
+    """
+    Create and install virtual environnement for website
+    Install all dependancy in virtualenv site-packages
+    """
+    sudo('mkvirtualenv {0}' . format(DST_HOME_USER_WWW), user=username)
+    pip_freeze = '{1}/pip-freeze' . format(TMP_PATH)
+    dependance = local('{0}/bin/pip freeze >> {1}' . format(DST_HOME_USER_WWW, pip_freeze))
+    put(pip_freeze, '{0}' . format(DST_HOME_USER_WWW))
+    run('chown {0}:{0} {1}/pip-freeze' . format(username, DST_HOME_USER_WWW))
+    os.remove(pip_freeze)
+
+    with cd('{0}' . format(DST_HOME_USER_WWW)):
+        with settings(sudo_user=username):
+            sudo('source {0}/bin/activate' . format(DST_HOME_USER_WWW))
+            sudo('{0}/bin/pip install -r pip-freeze' . format(DST_HOME_USER_WWW))
+            sudo('rm -rf {0}/pip-freeze' . format(DST_HOME_USER_WWW))
+
+def upload_source(username):
+    """
+    Compress and upload site source code
+    """
+    local('tar cfvz {0}/source.tar.gz {1}/source' . format(TMP_PATH, username))
+    put('{0}/source.tar.gz' . format(TMP_PATH), '{0}' . format(DST_HOME_USER_WWW))
+    os.remove('{0}/source.tar.gz' . format(TMP_PATH))
+    with cd('{0}' . format(DST_HOME_USER_WWW)):
+        sudo('tar xfvz source.tar.gz', user=username)
+
+def start_gunicorn_daemonized(username):
+    """
+    Launch gunicorn virtual environnement installation in daemon
+    """
+    with cd('{0}/source' . format(DST_HOME_USER_WWW)):
+        sudo('../bin/gunicorn_django -D -u {0} -g {0}' . format(username))
 
 def ssh_rsa_authentification_for_user(username):
     """
@@ -184,6 +227,32 @@ def init_git(username):
     local('git remote add server_prod {0}@{1}:6060/git {2}' . format(username, env.hosts[0], path_source))
     local('git push server_prod master {0}' . format(path_source))
 
+@root_is_required
+def add_nginx_vhost(username):
+    """
+    Add a new virtualhost to httpd with using template apache
+    """
+    # Create the new config file for writing
+    config_file = '{0}{1}' . format(TMP_PATH, username)
+    config = io.open(config_file, 'w')
+    if not config:
+        print('Configuration is broken. Config fill not found')
+
+    # Read the lines from the template, substitute the values, and write to the new config file
+    for line in io.open('{0}nginx' . format(CONFIG_PATH), 'r'):
+        line = line.replace('$path_site', '/home/{0}/www' . format(username))
+        line = line.replace('$site_domain', '{0}.com' . format(username))
+        config.write(line)
+
+    # Close the files
+    config.close()
+    put(config_file, '/etc/nginx/site-available')
+
+    run('ln -s /etc/nginx/site-available/{0} /etc/nginx/site-enabled' . format(username))
+    run('service nginx restart')
+    os.remove(config_file)
+
+@root_is_required
 def add_httpd_vhost(username):
     """
     Add a new virtualhost to httpd with using template apache
@@ -283,16 +352,21 @@ def setup_rootkit_secure():
     run('rm -rf {0}.old' . format(config_file))
 
 @root_is_required
-def secure_tools():
+def secure_tools(activate=True):
     """
     Secure and change access rule for compilating tools and
     dangerous system tools.
+    activate parameters is set to True by default. if set to false
+    execute automaticaly activate compilation tools for all users.
     Only root can use this.
     """
-    run('chmod o-x /usr/bin/gcc*')
-    run('chmod o-x /usr/bin/make')
-    run('chmod o-x /usr/bin/dpkg*')
-    run('chmod o-x /usr/bin/apt-get')
+    right = '-'
+    if not activate:
+        right = '+'
+    run('chmod o{0}x /usr/bin/gcc*' . format(right))
+    run('chmod o{0}x /usr/bin/make' . format(right))
+    run('chmod o{0}x /usr/bin/dpkg*' . format(right))
+    run('chmod o{0}x /usr/bin/apt-get' . format(right))
 
 @root_is_required
 def remove_bad_services():
