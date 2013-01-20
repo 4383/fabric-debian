@@ -76,12 +76,11 @@ def deploy_website():
     """
     username = prompt('Username :')
     DST_HOME_USER_WWW = '/home/{0}/www' . format(username)
-    print DST_HOME_USER_WWW
-    return
     add_new_user(username)
     init_git(username)
     add_postgre_user(username)
-    add_httpd_vhost(username)
+    set_postfix_user('{0}.com' . format(username))
+    add_nginx_vhost(username)
     make_venv(username)
     upload_source(username)
     start_gunicorn_daemonized(username)
@@ -169,10 +168,13 @@ def upload_source(username):
 
 def start_gunicorn_daemonized(username):
     """
-    Launch gunicorn virtual environnement installation in daemon
+    Add gunicorn starter script to init.d
+    Launch gunicorn virtual environnement installation in daemon at system start
     """
-    with cd('{0}/source' . format(DST_HOME_USER_WWW)):
-        sudo('../bin/gunicorn_django -D -u {0} -g {0}' . format(username))
+    gunicorn_launch = '../bin/gunicorn_django -D -u {0} -g {0} --workers=2' . format(username)
+    run('echo "#! /bin/sh" >> /etc/init.d/{0}' . format(username))
+    run('echo "{0}" >> /etc/init.d/{1}' . format(gunicorn_launch, username))
+    run('update-rc.d {0} default')
 
 def ssh_rsa_authentification_for_user(username):
     """
@@ -224,7 +226,7 @@ def init_git(username):
                 run('chown -R {0}:{0} .' . format(username))
                 sudo('chmod o-w git')
     local('git remote rm server_prod {0}' . format(path_source))
-    local('git remote add server_prod {0}@{1}:6060/git {2}' . format(username, env.hosts[0], path_source))
+    local('git remote add server_prod {0}@{1}:6060/{0}/git.git {2}' . format(username, env.hosts[0], path_source))
     local('git push server_prod master {0}' . format(path_source))
 
 @root_is_required
@@ -235,6 +237,7 @@ def add_nginx_vhost(username):
     # Create the new config file for writing
     config_file = '{0}{1}' . format(TMP_PATH, username)
     config = io.open(config_file, 'w')
+    gunicorn_port = prompt('Gunicorn server port : ')
     if not config:
         print('Configuration is broken. Config fill not found')
 
@@ -242,6 +245,7 @@ def add_nginx_vhost(username):
     for line in io.open('{0}nginx' . format(CONFIG_PATH), 'r'):
         line = line.replace('$path_site', '/home/{0}/www' . format(username))
         line = line.replace('$site_domain', '{0}.com' . format(username))
+        line = line.replace('$gunicorn_port', gunicorn_port)
         config.write(line)
 
     # Close the files
@@ -326,6 +330,15 @@ def setup_ssh():
     put(path, '/etc/ssh')
 
 @root_is_required
+def set_postfix_user(domain):
+    """
+    Add user for postfix and reload service
+    """
+    run('postconf -e "myorigin = {0}"' . format(domain))
+    run('postconf -e "myhostname = {0}.{1}"' . format(env.host_string, domain))
+    run('postfix reload')
+
+@root_is_required
 def setup_postfix():
     """
     Initialize configure and secure postfix
@@ -334,9 +347,7 @@ def setup_postfix():
     set domain for routing mail from system and not from specific website
     """
     domain = prompt('Your server domain : ')
-    run('postconf -e "myorigin = {0}"' . format(domain))
-    run('postconf -e "myhostname = {0}.{1}"' . format(env.host_string, domain))
-    run('postfix reload')
+    set_postfix_user(domain)
     for line in io.open('{0}smtp_secure.conf' . format(CONFIG_PATH), 'r'):
         run('echo "{0}" >> /etc/postfix/main.cf' . format(line))
 
