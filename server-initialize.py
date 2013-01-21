@@ -12,7 +12,7 @@ import re
 
 # VirtualBox local bridge between host and guest only for testing
 # Replace by your server IP
-#env.hosts = ['192.168.56.101']
+env.hosts = ['192.168.56.101']
 CONFIG_PATH = '{0}{1}config{1}' . format(os.getcwd(), os.sep)
 TMP_PATH = '{0}{1}tmp{1}' . format(os.getcwd(), os.sep)
 DST_HOME_USER_WWW = None
@@ -104,6 +104,7 @@ def install_app():
         'python-setuptools',
         'python-psycopg2',
         'python-imaging',
+	'libpq-dev',
         # Server
         'postgresql-8.4',
         'nginx',
@@ -318,6 +319,7 @@ def setup_firewall():
     """
     path = '{0}firewall.sh' . format(CONFIG_PATH)
     put(path, '/etc/init.d/')
+    run('chmod ugo+x /etc/init.d/firewall.sh')
     #run('echo "/root/firewall.sh" >> /etc/rc.local')
     run('update-rc.d firewall.sh defaults')
 
@@ -353,7 +355,7 @@ def setup_postfix():
 
 @root_is_required
 @email_is_requiered
-def setup_rootkit_secure():
+def setup_rootkit_secure(email):
     """
     Initialize, configure rootkit hunting with chkrootkit and rootkithunter
     """
@@ -374,7 +376,10 @@ def secure_tools(activate=True):
     right = '-'
     if not activate:
         right = '+'
-    run('chmod o{0}x /usr/bin/gcc*' . format(right))
+    test = run('ls /usr/bin/ | grep gcc')
+    print test
+    if test: 
+    	run('chmod o{0}x /usr/bin/gcc*' . format(right))
     run('chmod o{0}x /usr/bin/make' . format(right))
     run('chmod o{0}x /usr/bin/dpkg*' . format(right))
     run('chmod o{0}x /usr/bin/apt-get' . format(right))
@@ -394,20 +399,20 @@ def remove_bad_services():
 
 @root_is_required
 @email_is_requiered
-def setup_fail2ban():
+def setup_fail2ban(email):
     """
     Initialize, configure fail2ban
     """
     config_file = '/etc/fail2ban/jail.local'
     run('sed /destemail/d /etc/fail2ban/jail.conf > {0}' . format(config_file))
-    rules = [
-        "destemail = {0}" . format(email),
-        "[ssh_perso]",
-        "enabled = true",
-        "port = 6060",
-        "filter = sshd",
-        "logpath = /var/log/auth.log",
-        "maxretry = 6",
-    ]
-    for rule in rules:
-        run('echo {0} >> {1}' . format(rule, config_file))
+    #rules = [
+    #    "destemail = {0}" . format(email),
+    #    "[ssh_perso]",
+    #    "enabled = true",
+    #    "port = 6060",
+    #    "filter = sshd",
+    #    "logpath = /var/log/auth.log",
+    #    "maxretry = 6",
+    #]
+    #for rule in rules:
+    #    run('echo {0} >> {1}' . format(rule, config_file))

@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /bin/sh
 ### BEGIN INIT INFO
 # Provides: firewall
 # Required-start: $remote_fs $syslog
@@ -10,8 +10,8 @@
 
 # Setting policy to reject all
 iptables -P INPUT DROP
-iptables -p FORWARD DROP
-iptables -p OUTPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
 
 # Flush all existing rules
 iptables -F
