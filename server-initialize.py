@@ -76,14 +76,16 @@ def deploy_website():
     """
     username = prompt('Username :')
     DST_HOME_USER_WWW = '/home/{0}/www' . format(username)
+    print("#######################\n{0}\n#######################" . format(DST_HOME_USER_WWW))
     add_new_user(username)
-    init_git(username)
+    #init_git(username)
     add_postgre_user(username)
     set_postfix_user('{0}.com' . format(username))
     add_nginx_vhost(username)
     make_venv(username)
     upload_source(username)
     start_gunicorn_daemonized(username)
+    run("reboot")
 
 @root_is_required
 def install_app():
@@ -139,32 +141,52 @@ def add_new_user(username=None):
     run('adduser {0}' . format(username))
     ssh_rsa_authentification_for_user(username)
 
-def make_venv(username):
+def test_venv():
+    DST_HOME_USER_WWW = '/home/{0}/www' . format("vrp-online")
+    print(DST_HOME_USER_WWW)
+    make_venv("vrp-online", DST_HOME_USER_WWW)
+    upload_source("vrp-online", DST_HOME_USER_WWW)
+    start_gunicorn_daemonized("vrp-online", DST_HOME_USER_WWW)
+
+def make_venv(username, path):
     """
     Create and install virtual environnement for website
     Install all dependancy in virtualenv site-packages
     """
-    sudo('mkvirtualenv {0}' . format(DST_HOME_USER_WWW), user=username)
-    pip_freeze = '{1}/pip-freeze' . format(TMP_PATH)
-    dependance = local('{0}/bin/pip freeze >> {1}' . format(DST_HOME_USER_WWW, pip_freeze))
-    put(pip_freeze, '{0}' . format(DST_HOME_USER_WWW))
-    run('chown {0}:{0} {1}/pip-freeze' . format(username, DST_HOME_USER_WWW))
+    #run('iptables -F')
+    #run('iptables -P INPUT ACCEPT')
+    #run('iptables -P OUTPUT ACCEPT')
+    #run('iptables -P FORWARD ACCEPT')
+    run('aptitude install python2.7')
+    run('virtualenv {0}' . format(path))
+    run('chown -R {0}:{0} {1}' . format(username, path))
+    run('chmod -R ugo+w {0}' . format(path))
+    pip_freeze = '{0}/pip-freeze' . format(TMP_PATH)
+    dependance = local('{0}/bin/pip freeze >> {1}' . format(path, pip_freeze))
+    put(pip_freeze, '{0}' . format(path))
+    run('chown {0}:{0} {1}/pip-freeze' . format(username, path))
     os.remove(pip_freeze)
 
-    with cd('{0}' . format(DST_HOME_USER_WWW)):
+    run('wget http://python-distribute.org/distribute_setup.py')
+    run('{0}/bin/python distribute_setup.py' . format(path)) 
+    run('chown -R {0}:{0} {1}' . format(username, path))
+    run('chmod -R ugo+w {0}' . format(path))
+    with cd('{0}' . format(path)):
         with settings(sudo_user=username):
-            sudo('source {0}/bin/activate' . format(DST_HOME_USER_WWW))
-            sudo('{0}/bin/pip install -r pip-freeze' . format(DST_HOME_USER_WWW))
-            sudo('rm -rf {0}/pip-freeze' . format(DST_HOME_USER_WWW))
+            sudo('source {0}/bin/activate' . format(path))
+            run('{0}/bin/pip install -r pip-freeze' . format(path))
+            run('chown -R {0}:{0} {1}' . format(username, path))
+            run('chmod -R ugo+w {0}' . format(path))
+            sudo('rm -rf {0}/pip-freeze' . format(path))
 
-def upload_source(username):
+def upload_source(username, path):
     """
     Compress and upload site source code
     """
     local('tar cfvz {0}/source.tar.gz {1}/source' . format(TMP_PATH, username))
-    put('{0}/source.tar.gz' . format(TMP_PATH), '{0}' . format(DST_HOME_USER_WWW))
+    put('{0}/source.tar.gz' . format(TMP_PATH), '{0}' . format(path))
     os.remove('{0}/source.tar.gz' . format(TMP_PATH))
-    with cd('{0}' . format(DST_HOME_USER_WWW)):
+    with cd('{0}' . format(path)):
         sudo('tar xfvz source.tar.gz', user=username)
 
 def start_gunicorn_daemonized(username):
@@ -199,6 +221,10 @@ def add_postgre_user(username):
     passphrase = prompt('Digest pass phrase :')
     password = md5.new()
     password.update(passphrase)
+    local('echo {0} > {1}/passdigestpostgre{2}' . format(password.hexdigest(), CONFIG_PATH, username))
+
+    if "-" in username:
+	username = username.replace("-","")
 
     actions = [
         '''psql -c "CREATE USER {0} WITH PASSWORD '{1}';"''' . format(username, password.hexdigest()),
@@ -225,9 +251,8 @@ def init_git(username):
             with cd('{0}/git' . format(home)):
                 sudo('git --bare init')
                 run('chown -R {0}:{0} .' . format(username))
-                sudo('chmod o-w git')
-    local('git remote rm server_prod {0}' . format(path_source))
-    local('git remote add server_prod {0}@{1}:6060/{0}/git.git {2}' . format(username, env.hosts[0], path_source))
+    with cd('{0}/www/source' . format(home)):
+    	local('git remote add server_prod {0}@{1}:6060/{0}/git.git {2}' . format(username, env.hosts[0], path_source))
     local('git push server_prod master {0}' . format(path_source))
 
 @root_is_required
