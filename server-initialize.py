@@ -77,14 +77,18 @@ def deploy_website():
     username = prompt('Username :')
     DST_HOME_USER_WWW = '/home/{0}/www' . format(username)
     print("#######################\n{0}\n#######################" . format(DST_HOME_USER_WWW))
+    run("iptables -P INPUT ACCEPT")
+    run("iptables -P OUTPUT ACCEPT")
+    run("iptables -P FORWARD ACCEPT")
     add_new_user(username)
     #init_git(username)
     add_postgre_user(username)
     set_postfix_user('{0}.com' . format(username))
     add_nginx_vhost(username)
-    make_venv(username)
-    upload_source(username)
-    start_gunicorn_daemonized(username)
+    make_venv(username, DST_HOME_USER_WWW)
+    upload_source(username, DST_HOME_USER_WWW)
+    start_gunicorn_daemonized(username, DST_HOME_USER_WWW)
+    run('chown -R {0}:{0} /home/{0}' . format(username))
     run("reboot")
 
 @root_is_required
@@ -144,7 +148,6 @@ def add_new_user(username=None):
 def test_venv():
     DST_HOME_USER_WWW = '/home/{0}/www' . format("vrp-online")
     print(DST_HOME_USER_WWW)
-    make_venv("vrp-online", DST_HOME_USER_WWW)
     upload_source("vrp-online", DST_HOME_USER_WWW)
     start_gunicorn_daemonized("vrp-online", DST_HOME_USER_WWW)
 
@@ -157,7 +160,7 @@ def make_venv(username, path):
     #run('iptables -P INPUT ACCEPT')
     #run('iptables -P OUTPUT ACCEPT')
     #run('iptables -P FORWARD ACCEPT')
-    run('aptitude install python2.7')
+    run('aptitude install python2.7 python-dev')
     run('virtualenv {0}' . format(path))
     run('chown -R {0}:{0} {1}' . format(username, path))
     run('chmod -R ugo+w {0}' . format(path))
@@ -183,21 +186,23 @@ def upload_source(username, path):
     """
     Compress and upload site source code
     """
-    local('tar cfvz {0}/source.tar.gz {1}/source' . format(TMP_PATH, username))
+    local('tar cfvz {0}source.tar.gz /home/{1}/www/source' . format(TMP_PATH, username))
     put('{0}/source.tar.gz' . format(TMP_PATH), '{0}' . format(path))
     os.remove('{0}/source.tar.gz' . format(TMP_PATH))
     with cd('{0}' . format(path)):
         sudo('tar xfvz source.tar.gz', user=username)
 
-def start_gunicorn_daemonized(username):
+def start_gunicorn_daemonized(username, path):
     """
     Add gunicorn starter script to init.d
     Launch gunicorn virtual environnement installation in daemon at system start
     """
-    gunicorn_launch = '../bin/gunicorn_django -D -u {0} -g {0} --workers=2' . format(username)
+    run("{0}/bin/pip install gunicorn" . format(path))
+    gunicorn_launch = '{1}/bin/gunicorn_django -D -u {0} -g {0} --workers=2' . format(username, path)
     run('echo "#! /bin/sh" >> /etc/init.d/{0}' . format(username))
-    run('echo "{0}" >> /etc/init.d/{1}' . format(gunicorn_launch, username))
-    run('update-rc.d {0} default')
+    run('echo {0} >> /etc/init.d/{1}' . format(gunicorn_launch, username))
+    content=run("cat /etc/rc.local") # no cat abuse this time
+    run('echo -en "sh /etc/init.d/{0}\n{1}" > rc.local' . format(username, content))
 
 def ssh_rsa_authentification_for_user(username):
     """
