@@ -15,8 +15,8 @@ Exemples usage
 --------------
 *Deploy debian server after manual installation*
 
-``fab -u root -p <password> -f server-initialize initialize``
+``fab -u root -p <password> -f server-initialize deploy_server``
 
 *Deploy and serve a new django-postgresql website*
 
-``fab -u root -p <password> -f server-initailize add_new_website``
+``fab -u root -p <password> -f server-initailize deploy_website``
