@@ -27,9 +27,18 @@ Exemples usage
 
 ``fab -u root -p <password> -f server-initailize deploy_website``
 
-Choice
-------
-Python : Because is the most logical and effective programming high-level langage. I like the python philosophy, i think it's really good structured langage and logical
-Debian : Debian is very very stable linux distribute, he have large community, it's logical to use it on production server.
-Django : Django have a lot of re-usable packages, with large community. I win a lot of time to don't implements somes basicly components everytimes.
-I like the django-admin it's magical !!!
+VirtualBox testing
+------------------
+You can use this to test in virtualbox on debian server installation.
+You must to configure private local network between virtualbox and host system, allocate IP 192.168.56.101 to the virtual server
+and run it. Deployement is automaticaly configure to run on this address. to run in the real life, open the script and comment line with containe 192.168.56.101, and that's work
+
+Choices
+-------
+- Python : Because is the most logical and effective programming high-level langage. I like the python philosophy, i think it's really good structured langage and logical
+- Debian : Debian is very very stable linux distribute, he have large community, it's logical to use it on production server.
+- Django : Django have a lot of re-usable packages, with large community. I win a lot of time to don't implements somes basicly components everytimes. I like the django-admin it's magical !!!
+
+More
+----
+I've started fabric developpment evolution for can run this system on more linux / unix versions. For that i write some evolution to fabric package to can install with abstract handler of the host system package managers
